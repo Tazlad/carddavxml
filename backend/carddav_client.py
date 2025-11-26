@@ -90,13 +90,11 @@ class CardDAVClient:
             self.connect()
 
         contacts = []
-        direct_error = None  # Initialize to None for proper scoping
 
         try:
             logger.info("Fetching contacts using CardDAV protocol...")
 
-            # Use raw HTTP requests since caldav library is for CalDAV, not CardDAV
-            # CardDAV REPORT query to get all vcards
+            # Use raw HTTP requests - CardDAV REPORT query to get all vcards
             report_body = '''<?xml version="1.0" encoding="utf-8" ?>
 <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
   <D:prop>
@@ -144,9 +142,6 @@ class CardDAVClient:
                         # Get the vcard data
                         address_data = resp.find('.//C:address-data', ns)
                         if address_data is not None and address_data.text:
-                            # Parse vcard
-                            vcard = vobject.readOne(address_data.text)
-
                             # Get etag if available
                             etag_elem = resp.find('.//D:getetag', ns)
                             etag = etag_elem.text if etag_elem is not None else ''
@@ -166,54 +161,9 @@ class CardDAVClient:
                         logger.warning(f"Failed to parse vcard: {str(e)}")
                         continue
 
-                # If direct access worked, return early
-                if contacts or len(vcards) == 0:
-                    logger.info(f"Successfully fetched {len(contacts)} contacts via direct access")
-                    return contacts
+                logger.info(f"Successfully fetched {len(contacts)} contacts")
+                return contacts
 
-            except Exception as direct_error:
-                logger.warning(f"Direct addressbook access failed: {str(direct_error)}")
-                logger.info("Trying principal.addressbooks() method...")
-
-            # Fallback to principal.addressbooks() method
-            if self.principal:
-                try:
-                    address_books = self.principal.addressbooks()
-                    logger.info(f"Found {len(address_books)} address books")
-
-                    for address_book in address_books:
-                        logger.info(f"Processing address book: {address_book.url}")
-                        # Get all vcards from address book
-                        try:
-                            vcards = address_book.search(None)
-                            logger.info(f"Found {len(vcards)} contacts in address book")
-
-                            for vcard_obj in vcards:
-                                try:
-                                    contact_data = self._parse_vcard(vcard_obj)
-                                    if contact_data:
-                                        contacts.append(contact_data)
-                                except Exception as e:
-                                    logger.warning(f"Failed to parse vcard: {str(e)}")
-                                    continue
-
-                        except Exception as e:
-                            logger.warning(f"Failed to fetch vcards from address book: {str(e)}")
-                            continue
-
-                except Exception as addressbook_error:
-                    logger.error(f"Could not get addressbooks via principal: {str(addressbook_error)}")
-                    direct_msg = str(direct_error) if direct_error else "Unknown error or no contacts found"
-                    raise Exception(
-                        f"Could not access contacts using any method. "
-                        f"Direct access error: {direct_msg}. "
-                        f"Principal method error: {addressbook_error}"
-                    )
-            else:
-                direct_msg = str(direct_error) if direct_error else "Unknown error or no contacts found"
-                raise Exception(
-                    f"Could not access contacts. Direct access failed: {direct_msg}"
-                )
             elif response.status_code == 401:
                 raise Exception("Authentication failed. Please check your username and password.")
             elif response.status_code == 404:
@@ -227,9 +177,6 @@ class CardDAVClient:
         except Exception as e:
             logger.error(f"Failed to fetch contacts: {str(e)}")
             raise
-
-        logger.info(f"Successfully fetched {len(contacts)} contacts")
-        return contacts
 
     def _parse_vcard(self, vcard_obj) -> Dict:
         """Parse vCard object to contact dictionary"""
